@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>八方位盤マップ</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ai:#22304A; --ai-soft:#3A4A68; --paper:#F3F5F7; --line:#CBD2DB;
+  --shu:#B8412E; --ink:#1A2233; --muted:#5B6678;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:"BIZ UDPGothic","Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;color:var(--ink);background:var(--paper);-webkit-text-size-adjust:100%}
+#map{position:fixed;inset:0}
+
+.top{position:fixed;top:0;left:0;right:0;z-index:1000;display:flex;gap:8px;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 10px 0;pointer-events:none}
+.top>*{pointer-events:auto}
+#searchForm{flex:1;display:flex;background:#fff;border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 2px 10px rgba(34,48,74,.18);overflow:hidden;max-width:520px}
+#searchForm input{flex:1;min-width:0;border:0;padding:11px 12px;font:inherit;font-size:16px;background:transparent;color:var(--ink)}
+#searchForm button{border:0;background:var(--ai);color:#fff;font:inherit;font-weight:700;padding:0 14px}
+.fab{border:0;background:#fff;color:var(--ai);font:inherit;font-weight:700;border-radius:10px;padding:0 12px;
+  border:1px solid var(--line);box-shadow:0 2px 10px rgba(34,48,74,.18);white-space:nowrap}
+
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:1000;background:var(--paper);
+  border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+  padding:10px 14px calc(env(safe-area-inset-bottom,0px) + 12px);
+  max-height:62vh;overflow-y:auto;box-shadow:0 -4px 18px rgba(34,48,74,.16)}
+@media (min-width:760px){
+  .sheet{left:auto;right:12px;bottom:12px;width:370px;border:1px solid var(--line);border-radius:14px;max-height:calc(100% - 90px)}
+}
+.head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.head h1{font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;font-size:19px;margin:0;letter-spacing:.08em;color:var(--ai)}
+.linkbtn{border:0;background:none;color:var(--ai-soft);font:inherit;font-size:14px;text-decoration:underline;padding:6px 2px}
+
+.modes{display:flex;gap:6px}
+.modes button{flex:1;padding:10px 6px;border:1.5px solid var(--ai);background:#fff;color:var(--ai);
+  border-radius:8px;font:inherit;font-weight:700;font-size:15px}
+.modes button[aria-pressed="true"]{background:var(--ai);color:#fff}
+.modes button[data-mode="target"][aria-pressed="true"]{background:var(--shu);border-color:var(--shu)}
+.hint{font-size:12.5px;color:var(--muted);margin:6px 2px 0}
+
+.readout{margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.6}
+.readout .big{font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;font-size:24px;font-weight:700;color:var(--shu);line-height:1.2}
+.readout .big small{font-size:14px;color:var(--ink);font-weight:500;margin-left:6px}
+.readout .row{display:flex;justify-content:space-between;gap:10px}
+.readout .k{color:var(--muted)}
+.readout .empty{color:var(--muted)}
+
+.settings{margin-top:12px;display:grid;gap:12px}
+.settings[hidden]{display:none}
+.field>.lbl{font-size:13px;color:var(--muted);margin-bottom:5px}
+.seg{display:flex;border:1px solid var(--ai-soft);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;background:#fff;color:var(--ai);font:inherit;font-size:14px;padding:8px 4px;border-left:1px solid var(--line)}
+.seg button:first-child{border-left:0}
+.seg button[aria-pressed="true"]{background:var(--ai-soft);color:#fff}
+.inline{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:14px}
+.inline input{width:90px;padding:7px 8px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:16px}
+.inline input:disabled{opacity:.45}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.chips button{border:1px solid var(--line);background:#fff;color:var(--ai);border-radius:14px;padding:5px 10px;font:inherit;font-size:13px}
+.actions{display:flex;gap:8px}
+.actions button{flex:1;border:1px solid var(--line);background:#fff;color:var(--ai);border-radius:8px;padding:9px;font:inherit;font-size:14px}
+.note{font-size:12px;color:var(--muted);line-height:1.6}
+
+button:focus-visible,input:focus-visible{outline:2px solid var(--shu);outline-offset:2px}
+
+.dirlabel{font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;font-weight:700;font-size:16px;color:#fff;
+  text-align:center;line-height:1.15;white-space:nowrap;
+  text-shadow:0 0 3px rgba(20,28,44,.95),0 0 6px rgba(20,28,44,.6)}
+.dirlabel small{display:block;font-size:11.5px;font-weight:500}
+.northlabel{font-family:"Shippori Mincho",serif;font-size:12px;font-weight:700;color:var(--shu);white-space:nowrap;
+  text-shadow:0 0 3px #fff,0 0 3px #fff}
+.pin-center{width:22px;height:22px;border-radius:50%;background:var(--shu);border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.45)}
+.pin-target{width:18px;height:18px;transform:rotate(45deg);background:var(--ai);border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.45)}
+.toast{position:fixed;top:calc(env(safe-area-inset-top,0px) + 64px);left:50%;transform:translateX(-50%);z-index:1100;
+  background:var(--ai);color:#fff;padding:8px 14px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="top">
+  <form id="searchForm" role="search">
+    <input id="q" type="search" placeholder="住所・地名で検索" autocomplete="off" aria-label="住所・地名で検索">
+    <button type="submit">検索</button>
+  </form>
+  <button class="fab" id="locBtn" type="button">現在地</button>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<section class="sheet" aria-label="方位盤の操作">
+  <div class="head">
+    <h1>八方位盤</h1>
+    <button class="linkbtn" id="toggleSettings" type="button" aria-expanded="true">設定を閉じる</button>
+  </div>
+
+  <div class="modes" role="group" aria-label="地図をタップしたときの動作">
+    <button type="button" data-mode="center">基準点を置く</button>
+    <button type="button" data-mode="target">目的地を測る</button>
+  </div>
+  <p class="hint" id="hint"></p>
+
+  <div class="readout" id="readout"></div>
+
+  <div class="settings" id="settings">
+    <div class="field">
+      <div class="lbl">方位の区分</div>
+      <div class="seg" data-key="split">
+        <button type="button" data-val="kigaku">30°/60°（四正・四隅）</button>
+        <button type="button" data-val="equal">45°均等</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="lbl">北の基準</div>
+      <div class="seg" data-key="north">
+        <button type="button" data-val="true">真北</button>
+        <button type="button" data-val="mag">磁北</button>
+      </div>
+      <label class="inline">西偏角
+        <input id="decl" type="number" step="0.1" min="-30" max="30" inputmode="decimal"> 度
+      </label>
+    </div>
+
+    <div class="field">
+      <div class="lbl">方位線の引き方</div>
+      <div class="seg" data-key="line">
+        <button type="button" data-val="gc">大圏（正距方位）</button>
+        <button type="button" data-val="rhumb">恒程線（メルカトル直線）</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="lbl">盤の半径</div>
+      <label class="inline"><input id="radius" type="number" step="any" min="0.05" max="5000" inputmode="decimal"> km</label>
+      <div class="chips" id="radiusChips">
+        <button type="button" data-r="0.5">500m</button>
+        <button type="button" data-r="2">2km</button>
+        <button type="button" data-r="10">10km</button>
+        <button type="button" data-r="100">100km</button>
+        <button type="button" data-r="500">500km</button>
+        <button type="button" data-r="2000">2000km</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="lbl">塗り分け</div>
+      <div class="seg" data-key="color">
+        <button type="button" data-val="gogyo">五行色</button>
+        <button type="button" data-val="two">2色交互</button>
+        <button type="button" data-val="none">線のみ</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="lbl">ラベル</div>
+      <div class="seg" data-key="gua">
+        <button type="button" data-val="on">方位＋卦・五行</button>
+        <button type="button" data-val="off">方位のみ</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="lbl">地図</div>
+      <div class="seg" data-key="tiles">
+        <button type="button" data-val="pale">地理院 淡色</button>
+        <button type="button" data-val="std">地理院 標準</button>
+        <button type="button" data-val="osm">OSM</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="fitBtn">盤全体を表示</button>
+      <button type="button" id="clearTarget">目的地を消す</button>
+    </div>
+
+    <p class="note">
+      大圏：基準点から見た初期方位角が一定の線（地球上の最短経路）。距離が伸びると地図上では曲がる。<br>
+      恒程線：コンパスの針路を一定に保つ線。メルカトル図法の地図上では直線になる。<br>
+      数km程度なら両者の差は無視できる。偏角は国土地理院の磁気図で地点ごとに確認のこと（東京付近はおよそ7〜8°西偏）。
+    </p>
+  </div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var R_EARTH = 6371.0088;
+  var DIRS = [
+    {c:0,   name:"北",   gua:"坎", el:"水"},
+    {c:45,  name:"東北", gua:"艮", el:"土"},
+    {c:90,  name:"東",   gua:"震", el:"木"},
+    {c:135, name:"東南", gua:"巽", el:"木"},
+    {c:180, name:"南",   gua:"離", el:"火"},
+    {c:225, name:"西南", gua:"坤", el:"土"},
+    {c:270, name:"西",   gua:"兌", el:"金"},
+    {c:315, name:"西北", gua:"乾", el:"金"}
+  ];
+  var EL_COLOR = {"水":"#2F5D8A","木":"#3D7A4F","火":"#B8412E","土":"#B08A2E","金":"#8A8F98"};
+  var STORE_KEY = "happo-map-v1";
+
+  var defaults = {center:[35.681236,139.767125], target:null, split:"kigaku", north:"true", decl:7.5,
+    line:"gc", radius:10, color:"gogyo", gua:"on", tiles:"pale", mode:"center", settingsOpen:true};
+  var state = Object.assign({}, defaults);
+  try { var saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); if (saved) state = Object.assign(state, saved); } catch(e){}
+  function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch(e){} }
+
+  // ---------- geometry ----------
+  function rad(d){ return d*Math.PI/180; }
+  function deg(r){ return r*180/Math.PI; }
+  function norm(a){ return ((a%360)+360)%360; }
+
+  function dest(lat, lng, brg, km, mode){
+    var d = km/R_EARTH, t = rad(brg), p1 = rad(lat), l1 = rad(lng);
+    if (mode === "gc"){
+      var p2 = Math.asin(Math.sin(p1)*Math.cos(d) + Math.cos(p1)*Math.sin(d)*Math.cos(t));
+      var l2 = l1 + Math.atan2(Math.sin(t)*Math.sin(d)*Math.cos(p1), Math.cos(d) - Math.sin(p1)*Math.sin(p2));
+      return [deg(p2), deg(l2)];
+    }
+    var dp = d*Math.cos(t), q2 = p1 + dp, lim = rad(85);
+    if (q2 > lim) q2 = lim; if (q2 < -lim) q2 = -lim;
+    var dpsi = Math.log(Math.tan(Math.PI/4 + q2/2) / Math.tan(Math.PI/4 + p1/2));
+    var q = Math.abs(dpsi) > 1e-12 ? (q2 - p1)/dpsi : Math.cos(p1);
+    var dl = d*Math.sin(t)/q;
+    return [deg(q2), deg(l1 + dl)];
+  }
+
+  function inverse(a, b, mode){
+    var p1 = rad(a[0]), p2 = rad(b[0]), dl = rad(b[1] - a[1]);
+    if (mode === "gc"){
+      var y = Math.sin(dl)*Math.cos(p2);
+      var x = Math.cos(p1)*Math.sin(p2) - Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
+      var h = Math.pow(Math.sin((p2-p1)/2),2) + Math.cos(p1)*Math.cos(p2)*Math.pow(Math.sin(dl/2),2);
+      return {brg: norm(deg(Math.atan2(y,x))), km: 2*R_EARTH*Math.asin(Math.min(1, Math.sqrt(h)))};
+    }
+    if (Math.abs(dl) > Math.PI) dl = dl > 0 ? -(2*Math.PI - dl) : (2*Math.PI + dl);
+    var dp = p2 - p1;
+    var dpsi = Math.log(Math.tan(Math.PI/4 + p2/2) / Math.tan(Math.PI/4 + p1/2));
+    var q = Math.abs(dpsi) > 1e-12 ? dp/dpsi : Math.cos(p1);
+    return {brg: norm(deg(Math.atan2(dl, dpsi))), km: Math.sqrt(dp*dp + q*q*dl*dl)*R_EARTH};
+  }
+
+  // 盤の角度（選んだ北基準）→ 真北基準の角度へのずれ。西偏Dなら磁北は真北から -D。
+  function offset(){ return state.north === "mag" ? -(Number(state.decl) || 0) : 0; }
+  function half(i){ return state.split === "equal" ? 22.5 : (i % 2 === 0 ? 15 : 30); }
+  function sectorOf(refBrg){
+    for (var i = 0; i < DIRS.length; i++){
+      var diff = ((refBrg - DIRS[i].c + 540) % 360) - 180;
+      if (Math.abs(diff) <= half(i) + 1e-9) return {dir: DIRS[i], i: i, edge: Math.abs(Math.abs(diff) - half(i)) < 1};
+    }
+    return null;
+  }
+  function fillColor(i, d){
+    if (state.color === "gogyo") return EL_COLOR[d.el];
+    if (state.color === "two") return i % 2 === 0 ? "#22304A" : "#B8412E";
+    return null;
+  }
+
+  // ---------- map ----------
+  var map = L.map("map", {zoomControl:false, attributionControl:true}).setView(state.center, 12);
+  L.control.zoom({position:"topright"}).addTo(map);
+  var TILES = {
+    pale: {url:"https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", max:18,
+      attr:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'},
+    std:  {url:"https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", max:18,
+      attr:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'},
+    osm:  {url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png", max:19,
+      attr:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}
+  };
+  var tileLayer = null;
+  function setTiles(){
+    if (tileLayer) map.removeLayer(tileLayer);
+    var t = TILES[state.tiles] || TILES.pale;
+    tileLayer = L.tileLayer(t.url, {maxZoom:t.max, attribution:t.attr}).addTo(map);
+    var errs = 0;
+    tileLayer.on("tileerror", function(){
+      errs++;
+      if (errs === 3) toast("地図タイルを読み込めない。アプリ内プレビューではなく通常のブラウザで開くこと");
+    });
+  }
+
+  var board = L.layerGroup().addTo(map);
+  var centerMarker = L.marker(state.center, {draggable:true, zIndexOffset:1000,
+    icon: L.divIcon({className:"", html:'<div class="pin-center"></div>', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map);
+  var targetMarker = null;
+
+  centerMarker.on("drag", function(e){ var p = e.target.getLatLng(); state.center = [p.lat, p.lng]; draw(); });
+  centerMarker.on("dragend", save);
+
+  function ensureTargetMarker(){
+    if (!state.target){ if (targetMarker){ map.removeLayer(targetMarker); targetMarker = null; } return; }
+    if (!targetMarker){
+      targetMarker = L.marker(state.target, {draggable:true, zIndexOffset:900,
+        icon: L.divIcon({className:"", html:'<div class="pin-target"></div>', iconSize:[18,18], iconAnchor:[9,9]})}).addTo(map);
+      targetMarker.on("drag", function(e){ var p = e.target.getLatLng(); state.target = [p.lat, p.lng]; draw(); });
+      targetMarker.on("dragend", save);
+    } else targetMarker.setLatLng(state.target);
+  }
+
+  function draw(){
+    board.clearLayers();
+    var la = state.center[0], ln = state.center[1];
+    var R = Math.max(0.05, Math.min(5000, Number(state.radius) || 10));
+    var lm = state.line, off = offset(), N = 48;
+    centerMarker.setLatLng(state.center);
+
+    DIRS.forEach(function(d, i){
+      var h = half(i), a0 = d.c - h + off, a1 = d.c + h + off, k;
+      var col = fillColor(i, d);
+      if (col){
+        var pts = [];
+        for (k = 0; k <= N; k++) pts.push(dest(la, ln, a0, R*k/N, lm));
+        var steps = Math.max(6, Math.round(a1 - a0));
+        for (k = 1; k < steps; k++) pts.push(dest(la, ln, a0 + (a1 - a0)*k/steps, R, lm));
+        for (k = N; k >= 0; k--) pts.push(dest(la, ln, a1, R*k/N, lm));
+        L.polygon(pts, {stroke:false, fillColor:col, fillOpacity:0.2, interactive:false}).addTo(board);
+      }
+      var b = [];
+      for (k = 0; k <= N; k++) b.push(dest(la, ln, a0, R*k/N, lm));
+      L.polyline(b, {color:"#22304A", weight:1.6, opacity:0.9, interactive:false}).addTo(board);
+
+      var lp = dest(la, ln, d.c + off, R*0.62, lm);
+      var html = d.name + (state.gua === "on" ? "<small>" + d.gua + "・" + d.el + "</small>" : "");
+      L.marker(lp, {interactive:false, keyboard:false,
+        icon: L.divIcon({className:"dirlabel", html:html, iconSize:[64,36], iconAnchor:[32,18]})}).addTo(board);
+    });
+
+    var ring = [];
+    for (var a = 0; a <= 360; a += 2) ring.push(dest(la, ln, a, R, lm));
+    L.polyline(ring, {color:"#22304A", weight:1.4, opacity:0.8, interactive:false}).addTo(board);
+
+    if (off !== 0){
+      var tn = [];
+      for (var k2 = 0; k2 <= N; k2++) tn.push(dest(la, ln, 0, R*1.08*k2/N, lm));
+      L.polyline(tn, {color:"#B8412E", weight:1.4, dashArray:"5 5", interactive:false}).addTo(board);
+      L.marker(tn[tn.length-1], {interactive:false, keyboard:false,
+        icon: L.divIcon({className:"northlabel", html:"真北", iconSize:[30,14], iconAnchor:[15,16]})}).addTo(board);
+    }
+
+    ensureTargetMarker();
+    if (state.target){
+      var inv = inverse(state.center, state.target, lm), path = [];
+      for (var j = 0; j <= 64; j++) path.push(dest(la, ln, inv.brg, inv.km*j/64, lm));
+      L.polyline(path, {color:"#B8412E", weight:2.5, opacity:0.95, interactive:false}).addTo(board);
+    }
+    renderReadout();
+  }
+
+  // ---------- UI ----------
+  var $ = function(id){ return document.getElementById(id); };
+  function fmtKm(km){ return km < 1 ? Math.round(km*1000) + " m" : (km < 100 ? km.toFixed(2) : km.toFixed(1)) + " km"; }
+  function fmtDeg(x){ return norm(x).toFixed(1) + "°"; }
+
+  function renderReadout(){
+    var c = state.center, out = "";
+    out += '<div class="row"><span class="k">基準点</span><span>' + c[0].toFixed(5) + ", " + c[1].toFixed(5) + "</span></div>";
+    if (state.target){
+      var inv = inverse(state.center, state.target, state.line);
+      var decl = Number(state.decl) || 0;
+      var ref = state.north === "mag" ? norm(inv.brg + decl) : inv.brg;
+      var s = sectorOf(ref);
+      out = '<div class="big">' + (s ? s.dir.name : "—") +
+        (s ? "<small>" + s.dir.gua + "・" + s.dir.el + (s.edge ? "（境界付近）" : "") + "</small>" : "") + "</div>" + out;
+      out += '<div class="row"><span class="k">真北基準</span><span>' + fmtDeg(inv.brg) + "</span></div>";
+      out += '<div class="row"><span class="k">磁北基準（西偏' + decl + '°）</span><span>' + fmtDeg(inv.brg + decl) + "</span></div>";
+      out += '<div class="row"><span class="k">距離（' + (state.line === "gc" ? "大圏" : "恒程線") + '）</span><span>' + fmtKm(inv.km) + "</span></div>";
+    } else {
+      out += '<div class="empty">「目的地を測る」で地図をタップすると、方位・角度・距離を表示</div>';
+    }
+    $("readout").innerHTML = out;
+  }
+
+  function syncControls(){
+    document.querySelectorAll(".modes button").forEach(function(b){
+      b.setAttribute("aria-pressed", String(b.dataset.mode === state.mode));
+    });
+    $("hint").textContent = state.mode === "center"
+      ? "地図をタップした地点が基準点になる（ピンはドラッグでも移動可）"
+      : "地図をタップした地点までの方位と距離を測る";
+    document.querySelectorAll(".seg").forEach(function(seg){
+      var key = seg.dataset.key;
+      seg.querySelectorAll("button").forEach(function(b){
+        b.setAttribute("aria-pressed", String(String(state[key]) === b.dataset.val));
+      });
+    });
+    $("decl").value = state.decl;
+    $("decl").disabled = state.north !== "mag";
+    $("radius").value = state.radius;
+    $("settings").hidden = !state.settingsOpen;
+    $("toggleSettings").textContent = state.settingsOpen ? "設定を閉じる" : "設定を開く";
+    $("toggleSettings").setAttribute("aria-expanded", String(state.settingsOpen));
+  }
+
+  function update(){ syncControls(); draw(); save(); }
+
+  document.querySelectorAll(".modes button").forEach(function(b){
+    b.addEventListener("click", function(){ state.mode = b.dataset.mode; update(); });
+  });
+  document.querySelectorAll(".seg").forEach(function(seg){
+    seg.addEventListener("click", function(e){
+      var b = e.target.closest("button"); if (!b) return;
+      state[seg.dataset.key] = b.dataset.val;
+      if (seg.dataset.key === "tiles") setTiles();
+      update();
+    });
+  });
+  $("decl").addEventListener("input", function(){ var v = parseFloat(this.value); if (!isNaN(v)){ state.decl = v; draw(); save(); } });
+  $("radius").addEventListener("input", function(){ var v = parseFloat(this.value); if (!isNaN(v) && v > 0){ state.radius = Math.min(5000, v); draw(); save(); } });
+  $("radiusChips").addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    state.radius = parseFloat(b.dataset.r); update(); fitBoard();
+  });
+  $("toggleSettings").addEventListener("click", function(){ state.settingsOpen = !state.settingsOpen; update(); });
+  $("clearTarget").addEventListener("click", function(){ state.target = null; update(); });
+  $("fitBtn").addEventListener("click", fitBoard);
+
+  function fitBoard(){
+    var pts = [];
+    for (var a = 0; a < 360; a += 10) pts.push(dest(state.center[0], state.center[1], a, state.radius, state.line));
+    map.fitBounds(L.latLngBounds(pts), {padding:[30,30]});
+  }
+
+  map.on("click", function(e){
+    var p = [e.latlng.lat, e.latlng.lng];
+    if (state.mode === "center") state.center = p; else state.target = p;
+    update();
+  });
+
+  var toastTimer = null;
+  function toast(msg){
+    var t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 2600);
+  }
+
+  $("locBtn").addEventListener("click", function(){
+    if (!navigator.geolocation){ toast("この端末では位置情報が使えない"); return; }
+    navigator.geolocation.getCurrentPosition(function(pos){
+      state.center = [pos.coords.latitude, pos.coords.longitude];
+      map.setView(state.center, Math.max(map.getZoom(), 14)); update();
+      toast("現在地を基準点にした");
+    }, function(){ toast("位置情報を取得できなかった。ブラウザの許可を確認"); }, {enableHighAccuracy:true, timeout:10000});
+  });
+
+  $("searchForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    var q = $("q").value.trim(); if (!q) return;
+    fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(q))
+      .then(function(r){ return r.json(); })
+      .then(function(arr){
+        if (!arr || !arr.length){ toast("「" + q + "」は見つからなかった"); return; }
+        var c = arr[0].geometry.coordinates, p = [c[1], c[0]];
+        if (state.mode === "center") state.center = p; else state.target = p;
+        map.setView(p, Math.max(map.getZoom(), 14)); update();
+        toast((state.mode === "center" ? "基準点: " : "目的地: ") + arr[0].properties.title);
+      })
+      .catch(function(){ toast("検索できなかった。通信状態を確認"); });
+  });
+
+  setTiles();
+  syncControls();
+  draw();
+})();
+</script>
+</body>
+</html>
